@@ -1,0 +1,91 @@
+name: Build World Radio
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack bundle if project files are missing
+        run: |
+          if [ ! -f pubspec.yaml ]; then
+            z=$(ls *.zip 2>/dev/null | head -1)
+            if [ -n "$z" ]; then unzip -o "$z"; else echo "pubspec.yaml missing and no .zip found"; exit 1; fi
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create android/ios folders and apply audio + network settings
+        run: python3 tool/setup_platforms.py
+
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - run: flutter build apk --release
+      - run: flutter build appbundle --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WorldRadio-android
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+
+      - name: Attach to GitHub release (tags like v1.0.0)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack bundle if project files are missing
+        run: |
+          if [ ! -f pubspec.yaml ]; then
+            z=$(ls *.zip 2>/dev/null | head -1)
+            if [ -n "$z" ]; then unzip -o "$z"; else echo "pubspec.yaml missing and no .zip found"; exit 1; fi
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create android/ios folders and apply audio + network settings
+        run: python3 tool/setup_platforms.py
+
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir Payload && cp -R Runner.app Payload/
+          zip -r ../../../WorldRadio-ios-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WorldRadio-ios-unsigned
+          path: WorldRadio-ios-unsigned.ipa
