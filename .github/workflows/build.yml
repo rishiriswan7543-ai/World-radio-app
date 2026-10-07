@@ -36,16 +36,23 @@ jobs:
       - name: Create android/ios folders and apply audio + network settings
         run: python3 tool/setup_platforms.py
 
+      - name: Keep the same signing key between builds (installs over the old app)
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos --no-fatal-warnings
-      - run: flutter build apk --release
+      # One small APK per CPU type (about 20 MB each) instead of one 70 MB universal APK
+      - run: flutter build apk --release --split-per-abi
       - run: flutter build appbundle --release
 
       - uses: actions/upload-artifact@v4
         with:
           name: WorldRadio-android
           path: |
-            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/*-release.apk
             build/app/outputs/bundle/release/app-release.aab
 
       - name: Attach to GitHub release (tags like v1.0.0)
@@ -53,7 +60,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/*-release.apk
             build/app/outputs/bundle/release/app-release.aab
 
   ios:
